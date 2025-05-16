@@ -1,0 +1,30 @@
+{
+  "name": "deep-research-simple",
+  "description": "A simple deep research agent",
+  "version": "0.0.1",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "agentuity build",
+    "prestart": "agentuity bundle",
+    "start": "node --env-file .env --no-deprecation .agentuity/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "agentuity",
+    "agent",
+    "ai",
+    "ai agent"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@agentuity/sdk": "^0.0.115",
+    "@ai-sdk/anthropic": "^1.2.11",
+    "ai": "^4.3.15"
+  }
+}
