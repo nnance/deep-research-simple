@@ -35,6 +35,15 @@ const SYSTEM_PROMPT = `You are an expert researcher. Today is ${new Date().toISO
   - You may use high levels of speculation or prediction, just flag it for me.
   - Use Markdown formatting.`;
 
+const REFLECTION_PROMPT = (
+	prompt: string,
+	queries: string,
+	learnings: { followUpQuestions: string[]; learning: string }
+) => `Overall research goal: ${prompt}\n\n
+          Previous search queries: ${queries}\n\n
+          Follow-up questions: ${learnings.followUpQuestions.join(", ")}
+          `;
+
 type Learning = {
 	learning: string;
 	followUpQuestions: string[];
@@ -108,12 +117,13 @@ const deepResearch = async (
 
 	for (const query of queries) {
 		console.log(`Searching the web for: ${query}`);
-		const payload = {
-			query,
-			accumulatedSources: accumulatedResearch.searchResults,
-		};
 
-		const response = await researcher.run({ data: payload });
+		const response = await researcher.run({
+			data: {
+				query,
+				accumulatedSources: accumulatedResearch.searchResults,
+			},
+		});
 		const results = await response.data.json();
 		const { searchResults } = SearchResultsSchema.parse(results);
 
@@ -124,13 +134,8 @@ const deepResearch = async (
 			accumulatedResearch.learnings.push(learnings);
 			accumulatedResearch.completedQueries.push(query);
 
-			const newQuery = `Overall research goal: ${prompt}
-          Previous search queries: ${accumulatedResearch.completedQueries.join(
-						", "
-					)}
-   
-          Follow-up questions: ${learnings.followUpQuestions.join(", ")}
-          `;
+			const queries = accumulatedResearch.completedQueries.join(", ");
+			const newQuery = REFLECTION_PROMPT(prompt, queries, learnings);
 			await deepResearch(
 				newQuery,
 				researcher,

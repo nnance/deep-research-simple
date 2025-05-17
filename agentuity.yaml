@@ -71,3 +71,6 @@ agents:
   - id: agent_9820ecf5145862943268ee0b022f2973
     name: researcher
     description: Researches content on the web
+  - id: agent_3a363ae64fc111e24e4370812684d7c3
+    name: evaluator
+    description: Evaluates search results for relevance

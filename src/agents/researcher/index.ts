@@ -1,7 +1,12 @@
-import type { AgentRequest, AgentResponse, AgentContext } from "@agentuity/sdk";
+import type {
+	AgentRequest,
+	AgentResponse,
+	AgentContext,
+	RemoteAgent,
+} from "@agentuity/sdk";
 import { z } from "zod";
 import { Exa } from "exa-js";
-import { generateText, tool, generateObject } from "ai";
+import { generateText, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
 const SearchResultSchema = z.object({
@@ -18,6 +23,10 @@ const SearchProcessParametersSchema = z.object({
 });
 
 type SearchProcessParameters = z.infer<typeof SearchProcessParametersSchema>;
+
+const EvaluationReesultsSchema = z.object({
+	evaluation: z.enum(["relevant", "irrelevant"]),
+});
 
 const exa = new Exa(process.env.EXA_API_KEY);
 
@@ -41,24 +50,10 @@ const searchWeb = async (query: string) => {
 const SYSTEM_PROMPT =
 	"You are a researcher. For each query, search the web and then evaluate if the results are relevant and will help answer the following query";
 
-const EVAL_PROMPT = (
-	query: string,
-	pendingResult: SearchResult,
-	results: SearchResult[]
-) => `Evaluate whether the search results are relevant and will help answer the following query: ${query}. If the page already exists in the existing results, mark it as irrelevant.
-   
-	<search_results>
-	${JSON.stringify(pendingResult)}
-	</search_results>
-
-	<existing_results>
-	${JSON.stringify(results.map((result) => result.url))}
-	</existing_results>`;
-
-const searchAndProcess = async ({
-	query,
-	accumulatedSources,
-}: SearchProcessParameters) => {
+const searchAndProcess = async (
+	{ query, accumulatedSources }: SearchProcessParameters,
+	evaluator: RemoteAgent
+) => {
 	const pendingSearchResults: SearchResult[] = [];
 	const finalSearchResults: SearchResult[] = [];
 
@@ -84,13 +79,14 @@ const searchAndProcess = async ({
 				parameters: z.object({}),
 				async execute() {
 					const pendingResult = pendingSearchResults.pop();
+
 					if (pendingResult) {
-						const { object: evaluation } = await generateObject({
-							model: mainModel,
-							prompt: EVAL_PROMPT(query, pendingResult, accumulatedSources),
-							output: "enum",
-							enum: ["relevant", "irrelevant"],
+						const response = await evaluator.run({
+							data: { query, pendingResult, accumulatedSources },
 						});
+						const results = await response.data.json();
+						const { evaluation } = EvaluationReesultsSchema.parse(results);
+
 						if (evaluation === "relevant") {
 							finalSearchResults.push(pendingResult);
 						}
@@ -99,6 +95,7 @@ const searchAndProcess = async ({
 						return evaluation === "irrelevant"
 							? "Search results are irrelevant. Please search again with a more specific query."
 							: "Search results are relevant. End research for this query.";
+
 						// biome-ignore lint/style/noUselessElse: <explanation>
 					} else {
 						return "No more search results to evaluate.";
@@ -116,11 +113,19 @@ export default async function Agent(
 	ctx: AgentContext
 ) {
 	const params = SearchProcessParametersSchema.parse(await req.data.json());
-	const searchResults = await searchAndProcess(params);
+
+	const evaluator = await ctx.getAgent({ name: "evaluator" });
+	if (!evaluator) {
+		return resp.text("Evaluator agent not found", {
+			status: 500,
+			statusText: "Agent Not Found",
+		});
+	}
+
+	const searchResults = await searchAndProcess(params, evaluator);
 	const payload = {
 		searchResults,
 		message: "Research completed successfully!",
 	};
-	console.log("Search results:", payload);
 	return resp.json(payload);
 }
