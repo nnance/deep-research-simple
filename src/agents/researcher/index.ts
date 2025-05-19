@@ -54,7 +54,6 @@ const searchAndProcess = async (
 	{ query, accumulatedSources }: SearchProcessParameters,
 	evaluator: RemoteAgent
 ) => {
-	const pendingSearchResults: SearchResult[] = [];
 	const finalSearchResults: SearchResult[] = [];
 
 	await generateText({
@@ -70,17 +69,16 @@ const searchAndProcess = async (
 				}),
 				async execute({ query }) {
 					const results = await searchWeb(query);
-					pendingSearchResults.push(...results);
 					return { results };
 				},
 			}),
 			evaluate: tool({
 				description: "Evaluate the search results",
 				parameters: z.object({
-					results: z.array(SearchResultSchema),
+					results: z.array(SearchResultSchema) || SearchResultSchema,
 				}),
-				async execute() {
-					const pendingResult = pendingSearchResults.pop();
+				async execute({ results }) {
+					const pendingResult = results.pop();
 
 					if (pendingResult) {
 						const response = await evaluator.run({
