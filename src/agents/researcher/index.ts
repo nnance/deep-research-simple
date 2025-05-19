@@ -24,7 +24,7 @@ const SearchProcessParametersSchema = z.object({
 
 type SearchProcessParameters = z.infer<typeof SearchProcessParametersSchema>;
 
-const EvaluationReesultsSchema = z.object({
+const EvaluationResultsSchema = z.object({
 	evaluation: z.enum(["relevant", "irrelevant"]),
 });
 
@@ -71,12 +71,14 @@ const searchAndProcess = async (
 				async execute({ query }) {
 					const results = await searchWeb(query);
 					pendingSearchResults.push(...results);
-					return results;
+					return { results };
 				},
 			}),
 			evaluate: tool({
 				description: "Evaluate the search results",
-				parameters: z.object({}),
+				parameters: z.object({
+					results: z.array(SearchResultSchema),
+				}),
 				async execute() {
 					const pendingResult = pendingSearchResults.pop();
 
@@ -85,11 +87,12 @@ const searchAndProcess = async (
 							data: { query, pendingResult, accumulatedSources },
 						});
 						const results = await response.data.json();
-						const { evaluation } = EvaluationReesultsSchema.parse(results);
+						const { evaluation } = EvaluationResultsSchema.parse(results);
 
 						if (evaluation === "relevant") {
 							finalSearchResults.push(pendingResult);
 						}
+
 						console.log("Found:", pendingResult.url);
 						console.log("Evaluation completed:", evaluation);
 						return evaluation === "irrelevant"

@@ -98,6 +98,18 @@ const generateLearnings = async (query: string, searchResult: SearchResult) => {
 	return object;
 };
 
+async function searchWeb(query: string, researcher: RemoteAgent) {
+	const response = await researcher.run({
+		data: {
+			query,
+			accumulatedSources: accumulatedResearch.searchResults,
+		},
+	});
+	const results = await response.data.json();
+	const { searchResults } = SearchResultsSchema.parse(results);
+	return searchResults;
+}
+
 const deepResearch = async (
 	prompt: string,
 	researcher: RemoteAgent,
@@ -118,14 +130,7 @@ const deepResearch = async (
 	for (const query of queries) {
 		console.log(`Searching the web for: ${query}`);
 
-		const response = await researcher.run({
-			data: {
-				query,
-				accumulatedSources: accumulatedResearch.searchResults,
-			},
-		});
-		const results = await response.data.json();
-		const { searchResults } = SearchResultsSchema.parse(results);
+		const searchResults = await searchWeb(query, researcher);
 
 		accumulatedResearch.searchResults.push(...searchResults);
 		for (const searchResult of searchResults) {
