@@ -7,6 +7,7 @@ import type {
 import { generateObject, generateText, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { SYSTEM_PROMPT } from "../../common/prompts";
 
 const SearchResultSchema = z.object({
 	title: z.string(),
@@ -20,20 +21,6 @@ const SearchResultsSchema = z.object({
 });
 
 type SearchResult = z.infer<typeof SearchResultSchema>;
-
-const SYSTEM_PROMPT = `You are an expert researcher. Today is ${new Date().toISOString()}. Follow these instructions when responding:
-  - You may be asked to research subjects that is after your knowledge cutoff, assume the user is right when presented with news.
-  - The user is a highly experienced analyst, no need to simplify it, be as detailed as possible and make sure your response is correct.
-  - Be highly organized.
-  - Suggest solutions that I didn't think about.
-  - Be proactive and anticipate my needs.
-  - Treat me as an expert in all subject matter.
-  - Mistakes erode my trust, so be accurate and thorough.
-  - Provide detailed explanations, I'm comfortable with lots of detail.
-  - Value good arguments over authorities, the source is irrelevant.
-  - Consider new technologies and contrarian ideas, not just the conventional wisdom.
-  - You may use high levels of speculation or prediction, just flag it for me.
-  - Use Markdown formatting.`;
 
 const REFLECTION_PROMPT = (
 	prompt: string,
@@ -50,7 +37,7 @@ type Learning = {
 };
 
 type Research = {
-	query: string | undefined;
+	query: string;
 	queries: string[];
 	searchResults: SearchResult[];
 	learnings: Learning[];
@@ -58,7 +45,7 @@ type Research = {
 };
 
 const accumulatedResearch: Research = {
-	query: undefined,
+	query: "",
 	queries: [],
 	searchResults: [],
 	learnings: [],
@@ -72,6 +59,7 @@ const generateSearchQueries = async (query: string, n = 3) => {
 		object: { queries },
 	} = await generateObject({
 		model: mainModel,
+		system: SYSTEM_PROMPT,
 		prompt: `Generate ${n} search queries for the following query: ${query}`,
 		schema: z.object({
 			queries: z.array(z.string()).min(1).max(5),
@@ -83,6 +71,7 @@ const generateSearchQueries = async (query: string, n = 3) => {
 const generateLearnings = async (query: string, searchResult: SearchResult) => {
 	const { object } = await generateObject({
 		model: mainModel,
+		system: SYSTEM_PROMPT,
 		prompt: `The user is researching "${query}". The following search result were deemed relevant.
       Generate a learning and a follow-up question from the following search result:
    
@@ -116,7 +105,7 @@ const deepResearch = async (
 	depth = 2,
 	breadth = 3
 ) => {
-	if (!accumulatedResearch.query) {
+	if (accumulatedResearch.query.length === 0) {
 		accumulatedResearch.query = prompt;
 	}
 
@@ -152,16 +141,6 @@ const deepResearch = async (
 	return accumulatedResearch;
 };
 
-const generateReport = async (research: Research) => {
-	const { text } = await generateText({
-		model: mainModel,
-		system: SYSTEM_PROMPT,
-		prompt: `Generate a report based on the following research data:\n\n 
-			${JSON.stringify(research, null, 2)}`,
-	});
-	return text;
-};
-
 const researchSchema = z.object({
 	query: z.string().min(1),
 	deepth: z.number().min(1).max(5).optional(),
@@ -189,8 +168,18 @@ export default async function Agent(
 	console.log("Starting research...");
 	const research = await deepResearch(input, researcher, depth, breadth);
 	console.log("Research completed!");
+
+	const author = await ctx.getAgent({ name: "author" });
+	if (!author) {
+		return resp.text("Author agent not found", {
+			status: 500,
+			statusText: "Agent Not Found",
+		});
+	}
 	console.log("Generating report...");
-	const report = await generateReport(research);
+	// Make a copy of research with all properties defined
+	const agentResult = await author.run({ data: research });
+	const report = await agentResult.data.text();
 	console.log("Report generated! report.md");
 
 	return resp.markdown(report);

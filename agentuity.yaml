@@ -74,3 +74,6 @@ agents:
   - id: agent_3a363ae64fc111e24e4370812684d7c3
     name: evaluator
     description: Evaluates search results for relevance
+  - id: agent_fda883dee9d5686e818e6d352975dee0
+    name: author
+    description: Authors a report based on research findings
