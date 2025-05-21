@@ -2,16 +2,9 @@ import type { AgentRequest, AgentResponse, AgentContext } from "@agentuity/sdk";
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { SearchResultSchema, type SearchResult } from "../../common/types";
 
 const mainModel = anthropic("claude-3-5-sonnet-latest");
-
-const SearchResultSchema = z.object({
-	title: z.string(),
-	url: z.string().url(),
-	content: z.string(),
-});
-
-type SearchResult = z.infer<typeof SearchResultSchema>;
 
 const EvaluationParametersSchema = z.object({
 	query: z.string().min(1),

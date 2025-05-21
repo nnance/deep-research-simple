@@ -8,14 +8,7 @@ import { z } from "zod";
 import { Exa } from "exa-js";
 import { generateText, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-
-const SearchResultSchema = z.object({
-	title: z.string(),
-	url: z.string().url(),
-	content: z.string(),
-});
-
-type SearchResult = z.infer<typeof SearchResultSchema>;
+import { SearchResultSchema, type SearchResult } from "../../common/types";
 
 const SearchProcessParametersSchema = z.object({
 	query: z.string().min(1),
@@ -37,14 +30,11 @@ const searchWeb = async (query: string) => {
 		numResults: 1,
 		livecrawl: "always",
 	});
-	return results.map(
-		(r) =>
-			({
-				title: r.title,
-				url: r.url,
-				content: r.text,
-			} as SearchResult)
-	);
+	return results.map((r) => ({
+		title: r.title,
+		url: r.url,
+		content: r.text,
+	}));
 };
 
 const SYSTEM_PROMPT =

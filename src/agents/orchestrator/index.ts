@@ -4,23 +4,11 @@ import type {
 	AgentResponse,
 	RemoteAgent,
 } from "@agentuity/sdk";
-import { generateObject, generateText, tool } from "ai";
+import { generateObject } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { SYSTEM_PROMPT } from "../../common/prompts";
-
-const SearchResultSchema = z.object({
-	title: z.string(),
-	url: z.string().url(),
-	content: z.string(),
-});
-
-const SearchResultsSchema = z.object({
-	searchResults: z.array(SearchResultSchema),
-	message: z.string(),
-});
-
-type SearchResult = z.infer<typeof SearchResultSchema>;
+import { SearchResultsSchema, type SearchResult } from "../../common/types";
 
 const REFLECTION_PROMPT = (
 	prompt: string,
