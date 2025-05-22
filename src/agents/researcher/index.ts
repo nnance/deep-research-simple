@@ -1,101 +1,136 @@
 import type {
+	AgentContext,
 	AgentRequest,
 	AgentResponse,
-	AgentContext,
 	RemoteAgent,
 } from "@agentuity/sdk";
-import { z } from "zod";
-import { Exa } from "exa-js";
-import { generateText, tool } from "ai";
+import { generateObject } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { SearchResultSchema, type SearchResult } from "../../common/types";
+import { z } from "zod";
+import { SYSTEM_PROMPT } from "../../common/prompts";
+import {
+	DeepResearchSchema,
+	SearchResultsSchema,
+	type SearchResult,
+} from "../../common/types";
 
-const SearchProcessParametersSchema = z.object({
-	query: z.string().min(1),
-	accumulatedSources: z.array(SearchResultSchema),
-});
+const REFLECTION_PROMPT = (
+	prompt: string,
+	queries: string,
+	learnings: { followUpQuestions: string[]; learning: string }
+) => `Overall research goal: ${prompt}\n\n
+          Previous search queries: ${queries}\n\n
+          Follow-up questions: ${learnings.followUpQuestions.join(", ")}
+          `;
 
-type SearchProcessParameters = z.infer<typeof SearchProcessParametersSchema>;
+type Learning = {
+	learning: string;
+	followUpQuestions: string[];
+};
 
-const EvaluationResultsSchema = z.object({
-	evaluation: z.enum(["relevant", "irrelevant"]),
-});
+type Research = {
+	query: string;
+	queries: string[];
+	searchResults: SearchResult[];
+	learnings: Learning[];
+	completedQueries: string[];
+};
 
-const exa = new Exa(process.env.EXA_API_KEY);
+const accumulatedResearch: Research = {
+	query: "",
+	queries: [],
+	searchResults: [],
+	learnings: [],
+	completedQueries: [],
+};
 
 const mainModel = anthropic("claude-3-5-sonnet-latest");
 
-const searchWeb = async (query: string) => {
-	const { results } = await exa.searchAndContents(query, {
-		numResults: 1,
-		livecrawl: "always",
+const generateSearchQueries = async (query: string, n = 3) => {
+	const {
+		object: { queries },
+	} = await generateObject({
+		model: mainModel,
+		system: SYSTEM_PROMPT,
+		prompt: `Generate ${n} search queries for the following query: ${query}`,
+		schema: z.object({
+			queries: z.array(z.string()).min(1).max(5),
+		}),
 	});
-	return results.map((r) => ({
-		title: r.title,
-		url: r.url,
-		content: r.text,
-	}));
+	return queries;
 };
 
-const SYSTEM_PROMPT =
-	"You are a researcher. For each query, search the web and then evaluate if the results are relevant and will help answer the following query";
-
-const searchAndProcess = async (
-	{ query, accumulatedSources }: SearchProcessParameters,
-	evaluator: RemoteAgent
-) => {
-	const finalSearchResults: SearchResult[] = [];
-
-	await generateText({
+const generateLearnings = async (query: string, searchResult: SearchResult) => {
+	const { object } = await generateObject({
 		model: mainModel,
-		prompt: `Search the web for information about ${query}`,
 		system: SYSTEM_PROMPT,
-		maxSteps: 5,
-		tools: {
-			searchWeb: tool({
-				description: "Search the web for information about a given query",
-				parameters: z.object({
-					query: z.string().min(1),
-				}),
-				async execute({ query }) {
-					const results = await searchWeb(query);
-					return { results };
-				},
-			}),
-			evaluate: tool({
-				description: "Evaluate the search results",
-				parameters: z.object({
-					results: z.array(SearchResultSchema) || SearchResultSchema,
-				}),
-				async execute({ results }) {
-					const pendingResult = results.pop();
+		prompt: `The user is researching "${query}". The following search result were deemed relevant.
+      Generate a learning and a follow-up question from the following search result:
+   
+      <search_result>
+      ${JSON.stringify(searchResult)}
+      </search_result>
+      `,
+		schema: z.object({
+			learning: z.string(),
+			followUpQuestions: z.array(z.string()),
+		}),
+	});
+	return object;
+};
 
-					if (pendingResult) {
-						const response = await evaluator.run({
-							data: { query, pendingResult, accumulatedSources },
-						});
-						const results = await response.data.json();
-						const { evaluation } = EvaluationResultsSchema.parse(results);
-
-						if (evaluation === "relevant") {
-							finalSearchResults.push(pendingResult);
-						}
-
-						console.log("Found:", pendingResult.url);
-						console.log("Evaluation completed:", evaluation);
-						return evaluation === "irrelevant"
-							? "Search results are irrelevant. Please search again with a more specific query."
-							: "Search results are relevant. End research for this query.";
-
-						// biome-ignore lint/style/noUselessElse: <explanation>
-					} else {
-						return "No more search results to evaluate.";
-					}
-				},
-			}),
+async function researchWeb(query: string, researcher: RemoteAgent) {
+	const response = await researcher.run({
+		data: {
+			query,
+			accumulatedSources: accumulatedResearch.searchResults,
 		},
 	});
-	return finalSearchResults;
+	const results = await response.data.json();
+	const { searchResults } = SearchResultsSchema.parse(results);
+	return searchResults;
+}
+
+const deepResearch = async (
+	prompt: string,
+	researcher: RemoteAgent,
+	depth = 2,
+	breadth = 3
+) => {
+	if (accumulatedResearch.query.length === 0) {
+		accumulatedResearch.query = prompt;
+	}
+
+	if (depth === 0) {
+		return accumulatedResearch;
+	}
+
+	const queries = await generateSearchQueries(prompt, breadth);
+	accumulatedResearch.queries = queries;
+
+	for (const query of queries) {
+		console.log(`Searching the web for: ${query}`);
+
+		const searchResults = await researchWeb(query, researcher);
+
+		accumulatedResearch.searchResults.push(...searchResults);
+		for (const searchResult of searchResults) {
+			console.log(`Processing search result: ${searchResult.url}`);
+			const learnings = await generateLearnings(query, searchResult);
+			accumulatedResearch.learnings.push(learnings);
+			accumulatedResearch.completedQueries.push(query);
+
+			const queries = accumulatedResearch.completedQueries.join(", ");
+			const newQuery = REFLECTION_PROMPT(prompt, queries, learnings);
+			await deepResearch(
+				newQuery,
+				researcher,
+				depth - 1,
+				Math.ceil(breadth / 2)
+			);
+		}
+	}
+	return accumulatedResearch;
 };
 
 export default async function Agent(
@@ -103,20 +138,19 @@ export default async function Agent(
 	resp: AgentResponse,
 	ctx: AgentContext
 ) {
-	const params = SearchProcessParametersSchema.parse(await req.data.json());
+	const request = DeepResearchSchema.parse(await req.data.json());
+	const input = request.query;
+	const depth = request.deepth ?? 2;
+	const breadth = request.breadth ?? 3;
 
-	const evaluator = await ctx.getAgent({ name: "evaluator" });
-	if (!evaluator) {
-		return resp.text("Evaluator agent not found", {
+	const webSearch = await ctx.getAgent({ name: "search" });
+	if (!webSearch) {
+		return resp.text("Search agent not found", {
 			status: 500,
 			statusText: "Agent Not Found",
 		});
 	}
 
-	const searchResults = await searchAndProcess(params, evaluator);
-	const payload = {
-		searchResults,
-		message: "Research completed successfully!",
-	};
-	return resp.json(payload);
+	const research = await deepResearch(input, webSearch, depth, breadth);
+	return resp.json(research);
 }

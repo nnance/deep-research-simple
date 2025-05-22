@@ -34,12 +34,12 @@ export default async function Agent(
 	const { query, pendingResult, accumulatedSources } =
 		EvaluationParametersSchema.parse(await req.data.json());
 
-	const { object } = await generateObject({
+	const { object: evaluation } = await generateObject({
 		model: mainModel,
 		prompt: EVAL_PROMPT(query, pendingResult, accumulatedSources),
 		output: "enum",
 		enum: ["relevant", "irrelevant"],
 	});
 
-	return resp.json({ evaluation: object });
+	return resp.json({ evaluation });
 }

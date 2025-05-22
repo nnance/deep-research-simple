@@ -18,6 +18,7 @@ const AUTHOR_PROMPT = (
 
 export default async function Agent(req: AgentRequest, resp: AgentResponse) {
 	const research = ResearchSchema.parse(await req.data.json());
+
 	const { text } = await generateText({
 		model: anthropic("claude-3-5-sonnet-latest"),
 		system: SYSTEM_PROMPT,

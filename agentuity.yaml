@@ -77,3 +77,6 @@ agents:
   - id: agent_fda883dee9d5686e818e6d352975dee0
     name: author
     description: Authors a report based on research findings
+  - id: agent_06b8ed90051387389c1a9c8db4ae9f08
+    name: search
+    description: Web search agent that evaluates relevants

@@ -17,11 +17,17 @@ export const LearningSchema = z.object({
 });
 
 export const ResearchSchema = z.object({
-	query: z.string().optional().nullable(),
+	query: z.string(),
 	queries: z.array(z.string()),
 	searchResults: z.array(SearchResultSchema),
 	learnings: z.array(LearningSchema),
 	completedQueries: z.array(z.string()),
+});
+
+export const DeepResearchSchema = z.object({
+	query: z.string().min(1),
+	deepth: z.number().min(1).max(5).optional(),
+	breadth: z.number().min(1).max(5).optional(),
 });
 
 export type SearchResult = z.infer<typeof SearchResultSchema>;
